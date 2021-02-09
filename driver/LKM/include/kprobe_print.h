@@ -727,7 +727,7 @@ PRINT_EVENT_DEFINE(do_init_module,
                    PE_STRUCT__entry(
                            __field(int, uid)
                            __string(exe_path, exe_path)
-                           __string(mod_name, mod_name)
+                           __array(char, mod_name, MODULE_NAME_LEN)
                            __string(pid_tree, pid_tree)
                            __string(pwd, pwd)
                            __field(int, pid)
@@ -743,7 +743,7 @@ PRINT_EVENT_DEFINE(do_init_module,
                    PE_fast_assign(
                            __entry->uid = get_current_uid();
                            __assign_str(exe_path, exe_path);
-                           __assign_str(mod_name, mod_name);
+                           memcpy(__entry->mod_name, mod_name, MODULE_NAME_LEN);
                            __assign_str(pid_tree, pid_tree);
                            __assign_str(pwd, pwd);
                            __entry->pid = current->pid;
@@ -759,7 +759,7 @@ PRINT_EVENT_DEFINE(do_init_module,
                    PE_printk("%d" RS "603" RS "%s" RS "%d" RS "%d" RS "%d" RS "%d" RS "%d" RS "%s" RS "%s" RS "%u" RS "%s" RS "%s" RS "%s",
                            __entry->uid, __get_str(exe_path),__entry->pid,
                            __entry->ppid, __entry->pgid, __entry->tgid, __entry->sid, __entry->comm,
-                           __get_str(nodename), __entry->sessionid, __get_str(mod_name),
+                           __get_str(nodename), __entry->sessionid, __entry->mod_name,
                            __get_str(pid_tree), __get_str(pwd))
 );
 

@@ -2139,7 +2139,6 @@ int do_init_module_pre_handler(struct kprobe *p, struct pt_regs *regs)
     char *exe_path = DEFAULT_RET_STR;
     char *pname_buf = NULL;
     char *pname = NULL;
-    char *init_module_buf = NULL;
     void *tmp_mod;
     struct module *mod;
 
@@ -2148,10 +2147,6 @@ int do_init_module_pre_handler(struct kprobe *p, struct pt_regs *regs)
         return 0;
 
     mod = (struct module *)tmp_mod;
-
-    init_module_buf = kzalloc(PATH_MAX, GFP_ATOMIC);
-    if (!init_module_buf)
-        return 0;
 
     buffer = kzalloc(PATH_MAX, GFP_ATOMIC);
     if (buffer)
@@ -2175,8 +2170,6 @@ int do_init_module_pre_handler(struct kprobe *p, struct pt_regs *regs)
 
     if (pname_buf)
         kfree(pname_buf);
-
-    kfree(init_module_buf);
 
     return 0;
 }
