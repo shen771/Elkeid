@@ -2,15 +2,19 @@
 
 #ifndef _TRACE_EVENT_H
 #define _TRACE_EVENT_H
+
+#include "../include/trace_buffer.h"
+
+#ifdef __KERNEL__
+
 #include <linux/kernel.h>
-#include <linux/trace_seq.h>
-#include <linux/ring_buffer.h>
 #include <linux/kallsyms.h>
+#include <linux/trace_seq.h>
 
 #ifdef SMITH_TRACE_EVENTS
 #include <linux/trace_events.h>
 #else
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
 #define SMITH_TRACE_EVENTS
 #include <linux/trace_events.h>
 #else
@@ -21,11 +25,13 @@
 #define SZ_32K				0x00008000
 #define SZ_128K				0x00020000
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 5, 0)
-#define RING_BUFFER_ALL_CPUS -1
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0)
+#else
+#define PDE_DATA(i)  PDE(i)->data
 #endif
 
-#ifdef SMITH_TRACE_EVENTS
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0)
 static inline int __trace_seq_used(struct trace_seq *s)
 {
 	return trace_seq_used(s);
@@ -85,10 +91,14 @@ struct print_event_class {
 	unsigned short id;
 	enum print_line_t (*format)(struct trace_seq *seq,
 				    struct print_event_entry *entry);
-	struct ring_buffer *buffer;
+	struct tb_ring *trace;
 };
 
 #define RB_BUFFER_SIZE	SZ_128K
 #define PRINT_EVENT_DEFINE(name, proto, args, tstruct, assign, print)
+
+#endif /* __KERNEL__ */
+
+#define TRACE_IOCTL_STAT	(0xd00dbef0)	/* ioctl command for stat */
 
 #endif /* _TRACE_EVENT_H */

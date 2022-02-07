@@ -1,31 +1,84 @@
-# AgentSmith-HIDS
+# Elkeid
+
+*(Originated from AgentSmith-HIDS, but now it’s not just HIDS)*
 
 English | [简体中文](README-zh_CN.md)
 
-AgentSmith-HIDS is a Cloud-Native Host-Based Intrusion Detection solution project to provide next-generation Threat Detection and Behavior Audition with modern architecture. 
+Elkeid is a support cloud-native and base linux host security(Intrusion detection and risk identification) solution.
 
-AgentSmith-HIDS comprises three major components：
-* **AgentSmith-HIDS Agent, co-worked with AgentSmith-HIDS Driver**, is the game-changer for the Data Collection market. It works at both Kernel and User Space of Linux System, providing rich data flow with much better performance. 
-* **AgentSmith-HIDS Server** provides Service-Discovery for the production environment of up to millions of agents. The Server also supports primary data formatting along with rules distribution for the Agent. 
-* **AgentSmith-HIDS HUB** provides high-performance, lightweight, and stateless alert generation with data manipulation to analyze the rich data flow. 
+## Elkeid Architecture
 
-Now we are more than happy to announce the open-source of AgentSmith-HIDS Agent and AgentSmith-HIDS Driver. We decided to strengthen the Defense Community with our game-changing technology. Due to the lack of rule engine and detection functions, AgentSmith-HIDS Agent and Driver doesn't provide all HIDS capability on its own. However, it is a tremendous Host-Information-Collect-Agent that could be easily integrated with current HIDS/NIDS/XDR solutions on the market. AgentSmith-HIDS Agent and AgentSmith-HIDS Driver together advance solutions on the market in four major areas.
+<img src="server/docs/server.png"/>
 
-* **Better performance**  Data/Information are collected in kernel space to avoid additional supplement actions such as traversal of '/proc' directory or collecting from other audition processes such as "auditd".
-* **Hard to be bypassed**  A specifically designed kernel driver powers data/Information collection, making it virtually impossible for malicious software, like rootkit, to evade detection or audition. The Driver could capture even evasion behavior itself.
-* **Kernel + User Space**  AgentSmith-HIDS Agent provides User Space detection abilities, including file audition, in-house rule detection, and primary allowlists. 
-* **Easy to be integrated**  AgentSmith-HIDS could empower any User Space agents far beyond Host Intrusion usages with the detailed and reliable data flow. A wide user action audition could benefit both Behavior Analysis and Compliance requests. When integrated with NIDS, security analyzers could build a comprehensive Provenance Graph from the network connections, along with high traceable process trees and file auditions.
+##  Elkeid Host Ability
+<img src="png/Ability_1.png"/>
+
+* **[Elkeid Agent](agent)** Linux userspace agent，responsible for managing various plugin,communication with **Elkeid Server**.
+* **[Elkeid Driver](driver)** Driver can collect data on Linux Kernel, support container environment, communication with Elkeid Driver Plugin.
+* **[Elkeid RASP](rasp)** Support CPython、Golang、JVM、NodeJS runtime data probe, supports dynamic injection into the runtime.
+* **Elkeid Agent Plugin List**
+    * [Driver Plugin](https://github.com/bytedance/Elkeid/tree/main/plugins/driver): Responsible for managing **Elkeid Driver**, and process the driver data.
+    * [Collector Plugin](https://github.com/bytedance/Elkeid/tree/main/plugins/collector): Responsible for the collection of assets/log information on the Linux System, such as user list, crontab, package information, etc.
+    * [Journal Watcher](https://github.com/bytedance/Elkeid/tree/main/plugins/journal_watcher): Responsible for monitoring systemd logs, currently supports ssh related log collection and reporting.
+    * [Scanner Plugin](https://github.com/bytedance/Elkeid/tree/main/plugins/scanner): Responsible for static detection of malicious files on the host, currently supports yara.
+    * [RASP Plugin](https://github.com/bytedance/Elkeid/tree/main/rasp/plugin): Responsible for managing RASP components and processing data collected from RASP.
 
 
-## System Architecture
+The above components can provide these data:
+<img src="png/data_index.png"/>
+Driver Data
+<img src="png/data1.png"/>
+Other Data
+<img src="png/data2.png"/>
 
-<img src="./AgentSmith-HIDS.png"/>
 
-Currently, we are only open-sourcing AgentSmith-HIDS Agent && Driver. Both components have been deployed and tested in production environments for months. We welcome any suggestions and cooperation.
+## Elkeid Backend Ability
+* **[Elkeid AgentCenter](server/agent_center)** Responsible for communicating with the Agent, collecting Agent data and simply processing it and then summing it into the MQ, is also responsible for the management of the Agent, including Agent upgrade, configuration modification, task distribution, etc.
+* **[Elkeid ServiceDiscovery](server/service_discovery)** Each component in the background needs to register and synchronize service information with the component regularly, so as to ensure that the instances in each service module are visible to each other and facilitate direct communication.
+* **[Elkeid Manager](server/manager)** Responsible for the management of the entire backend, and provide related query and management API.
+* **[Elkeid Console](server/web_console)** Elkeid Front-end
+* **[Elkeid HUB](https://github.com/bytedance/Elkeid-HUB)** Elkeid HIDS RuleEngine
 
-* #### [AgentSmith-HIDS Driver](https://github.com/bytedance/AgentSmith-HIDS/tree/main/driver)
-* #### [AgentSmith-HIDS Agent](https://github.com/bytedance/AgentSmith-HIDS/tree/main/agent)
+## Elkeid Advantage
 
-## To be Continued 
-* AgentSmith-Server is under development. More Features are on the way.
+* **Excellent Performance**: With the help of Elkeid Driver and many custom developments, the end-to-end capability is excellent
+* **Born For Intrusion Detection**: Data collection is based on high-intensity confrontation, and targeted data collection is available for many advanced confrontation scenarios such as Kernel Rootkit, privilege escalation, and fileless attacks.
+* **Support Cloud Native**: Cloud native environment is supported from end-to-end capabilities to back-end deployment.
+* **One-million-level Production Environment Verification**: The whole has been internally verified at a million-level, and the stability and performance have been tested from end to server. Elkeid is not just a PoC, it is production-level; the open source version is the internal Release Version.
+* **Secondary Development Friendly**: Elkeid facilitates secondary development and increased demand for customization.
 
+
+## Front-end display
+* Host Details
+  <img src="png/console1.png" style="float:left;"/>
+* Asset Details
+  <img src="png/console2.png" style="float:left;"/>
+* Alarm Details
+  <img src="png/console3.png" style="float:left;"/>
+* Allow List Management
+  <img src="png/console6.png" style="float:left;"/>
+* Agent/Plugin Management
+  <img src="png/console4.png" style="float:left;"/>
+* User Management
+  <img src="png/console5.png" style="float:left;"/>
+
+## Quick Start
+* **[Deploy by Elkeidup](elkeidup/README.md)**
+
+## Contact us && Cooperation
+
+<img src="png/Lark.png" width="40%" style="float:left;"/>
+
+*Lark Group*
+
+## License
+* Elkeid Driver: GPLv2
+* Elkeid RASP: Apache-2.0
+* Elkeid Agent: Apache-2.0
+* Elkeid Server: Apache-2.0
+* Elkeid Console: [Elkeid License](server/web_console/LICENSE)
+
+## 404StarLink 2.0 - Galaxy
+<img src="https://github.com/knownsec/404StarLink-Project/raw/master/logo.png" width="30%" style="float:left;"/>
+
+Elkeid has joined 404Team [404StarLink 2.0 - Galaxy](https://github.com/knownsec/404StarLink2.0-Galaxy)

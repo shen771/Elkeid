@@ -7,7 +7,7 @@
 
 #if(LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 32))
 #error ******************************************************************************
-#error * AgentSmith-HIDS works on kernel 2.6.32 or newer. Please update your kernel *
+#error * Elkeid works on kernel 2.6.32 or newer. Please update your kernel          *
 #error ******************************************************************************
 #endif
 
@@ -15,7 +15,8 @@
 #include "util.h"
 #include "filter.h"
 #include "struct_wrap.h"
-#include <asm/syscall.h>
+
+#include <linux/usb.h>
 #include <linux/uio.h>
 #include <linux/kprobes.h>
 #include <linux/binfmts.h>
@@ -29,7 +30,6 @@
 #include <linux/net.h>
 #include <linux/sched.h>
 #include <linux/skbuff.h>
-#include <linux/syscalls.h>
 #include <linux/utsname.h>
 #include <linux/types.h>
 #include <linux/ptrace.h>
@@ -42,18 +42,19 @@
 #include <linux/kallsyms.h>
 #include <linux/fdtable.h>
 #include <linux/prctl.h>
+#include <linux/kmod.h>
+#include <linux/dcache.h>
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0)
+#ifndef get_file_rcu
 #define get_file_rcu(x) atomic_long_inc_not_zero(&(x)->f_count)
 #endif
 
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 32)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 1, 0)
 #define __ARG_PLACEHOLDER_1 0,
 #define config_enabled(cfg) _config_enabled(cfg)
 #define _config_enabled(value) __config_enabled(__ARG_PLACEHOLDER_##value)
 #define __config_enabled(arg1_or_junk) ___config_enabled(arg1_or_junk 1, 0)
 #define ___config_enabled(__ignored, val, ...) val
-
 #define IS_ENABLED(option) \
         (config_enabled(option) || config_enabled(option##_MODULE))
 #endif
@@ -96,9 +97,5 @@
 #define P_TO_STRING(x) # x
 #define P_GET_SYSCALL_NAME(x) P_SYSCALL_PREFIX(x)
 #define P_GET_COMPAT_SYSCALL_NAME(x) P_COMPAT_SYSCALL_PREFIX(x)
-
-static struct files_struct *(*get_files_struct_sym) (struct task_struct * task);
-
-static void (*put_files_struct_sym) (struct files_struct * files);
 
 #endif /* SMITH_HOOK_H */

@@ -1,33 +1,86 @@
-# AgentSmith-HIDS
+# Elkeid
+
+*(Originated from AgentSmith-HIDS, but now it’s not just HIDS)*
 
 [English](README.md) | 简体中文
 
-AgentSmith-HIDS是一个云原生的基于主机的入侵检测解决方案。
+Elkeid是一个云原生的基于主机的安全(入侵检测与风险识别)解决方案。
 
-AgentSmith-HIDS包含三个主要组件：
-* **AgentSmith-HIDS** Agent与AgentSmith-HIDS Driver作为数据采集层，它在Linux系统的内核和用户空间上均可使用，从而提供了具有更好性能的且更丰富的数据。 
-* **AgentSmith-HIDS** Server可以提供百万级Agent的接入能力，并且支持控制与策略下发。
-* **AgentSmith-HUB** 提供高性能，轻量级，分布式和无状态规则/事件处理引擎。
+## Elkeid Architecture
 
-目前AgentSmith-HIDS Agent和AgentSmith-HIDS Driver 已开源。由于目前开源模块缺少规则引擎和检测功能，AgentSmith-HIDS Agent && Driver 无法单独提供所有的HIDS能力。但是目前开源的部分作为"Host-Information-Collect-Agent"，可以轻松地与其他的HIDS/NIDS/XDR解决方案进行集成。 AgentSmith-HIDS Agent和AgentSmith-HIDS Driver 有以下几个优点：
+<img src="server/docs/server.png"/>
 
-* **性能更优**，主要通过内核态驱动来获取信息，无需诸如遍历`/proc`这样的行为进行数据补全。
-* **难以绕过**，由于我们的信息获取是来自于内核态驱动，因此面对很多刻意隐藏自己的行为如rootkit难以绕过我们的监控。并且对于rootkit本身，驱动提供了一部分检测能力。
-* **为联动而生**，我们不仅可以作为安全工具实现侵检测/溯源等功能，也可以实现如梳理内部资产等能力，我们通过内核模块对进程/用户/文件/网络连接进行梳理，如果有CMDB的信息，那么联动后你将会得到一张从网络到主机/容器/业务信息的调用/依赖关系图，还可以和NIDS/威胁情报联动等等。
-* **用户态+内核态**，AgentSmith-HIDS同时拥有内核态和用户态的模块，可以形成互补。
+##  Elkeid Host Ability
+<img src="png/Ability_1.png"/>
 
-## 系统架构
+* **[Elkeid Agent](https://github.com/bytedance/Elkeid/blob/main/agent/README-zh_CN.md)** 用户态 Agent，负责管理各个端上能力组件，与 **Elkeid Server** 通讯
+* **[Elkeid Driver](https://github.com/bytedance/Elkeid/blob/main/driver/README-zh_CN.md)** 在 Linux Kernel 层采集数据的组件，兼容容器环境，并能够提供Rootkit检测能力。与Elkeid Agent管理的Driver插件通讯
+* **[Elkeid RASP](rasp)** 支持 CPython、Golang、JVM、NodeJS 的运行时数据采集探针，支持动态注入到运行时。
+* **Elkeid Agent Plugin List**
+  * [Driver Plugin](plugins/driver): 负责与**Elkeid Driver**通信，处理其传递的数据等
+  * [Collector Plugin](plugins/collector): 负责端上的资产/关键信息采集工作，如用户，定时任务，包信息等等
+  * [Journal Watcher](plugins/journal_watcher): 负责监测systemd日志的插件，目前支持ssh相关日志采集与上报
+  * [Scanner Plugin](https://github.com/bytedance/Elkeid/blob/main/plugins/scanner): 负责在端上进行静态检测恶意文件的插件，目前支持yara
+  * [RASP Plugin](https://github.com/bytedance/Elkeid/tree/main/rasp/plugin): 分析系统进程运行时，上报运行时信息，处理server下发的 attach 指令，收集各个探针上报的数据，并支持与探针通信。
 
-<img src="AgentSmith-HIDS.png"/>
+以上组件可以提供以下数据：
+<img src="png/data_index.png"/>
+Driver Data
+<img src="png/data1.png"/>
+Other Data
+<img src="png/data2.png"/>
 
-目前，我们只开源了AgentSmith-HIDS Agent && Driver。这两个组件已经在生产环境中部署和测试了数月，欢迎任何建议和合作。
 
-* #### [AgentSmith-HIDS Driver](https://github.com/bytedance/AgentSmith-HIDS/tree/main/driver)
-* #### [AgentSmith-HIDS Agent](https://github.com/bytedance/AgentSmith-HIDS/tree/main/agent)
+## Elkeid Backend Ability
+* **[Elkeid AgentCenter](server/agent_center)** 负责与Agent进行通信，采集Agent数据并简单处理后汇总到消息队列集群，同时也负责对Agent进行管理包括Agent的升级，配置修改，任务下发等
+* **[Elkeid ServiceDiscovery](server/service_discovery)** 后台中的各个服务模块都需要向该组件定时注册、同步服务信息，从而保证各个服务模块中的实例相互可见，便于直接通信
+* **[Elkeid Manager](server/manager)** 负责对整个后台进行管理，并提供相关的查询、管理接口
+* **[Elkeid Console](server/web_console)** Elkeid 前端部分
+* **[Elkeid HUB](https://github.com/bytedance/Elkeid-HUB)** Elkeid HIDS RuleEngine
 
-## To be Continued
-* AgentSmith-HIDS Server正在开发中，更多功能即将推出。
+## Elkeid Advantage
+
+* **性能优异**：端上能力借助Elkeid Driver与很多定制开发，性能极佳
+* **为入侵检测而生**：数据采集以高强度对抗为前提，对如Kernel Rootkit，提权，无文件攻击等众多高级对抗场景均有针对性数据采集
+* **支持云原生**：从端上能力到后台部署都支持云原生环境
+* **百万级生产环境验证**：整体经过内部百万级验证，从端到Server，稳定性与性能经过考验，Elkeid不仅仅是一个PoC，是生产级的；开源版本即内部Release Version
+* **二次开发友好**：Elkeid 方便二次开发与定制化需求增加
+
+
+
+## Front-end display
+* 主机详情
+<img src="png/console1.png" style="float:left;"/>
+* 资产详情
+<img src="png/console2.png" style="float:left;"/>
+* 告警详情
+<img src="png/console3.png" style="float:left;"/>
+* Allow List Management
+<img src="png/console6.png" style="float:left;"/>
+* Agent/Plugin 管理
+<img src="png/console4.png" style="float:left;"/>
+* 用户 管理
+<img src="png/console5.png" style="float:left;"/>
+
+
+## Quick Start
+* **[通过Elkeidup部署](elkeidup/README-zh_CN.md)**
+
+## Contact us && Cooperation
+
+<img src="png/Lark.png" width="40%" style="float:left;"/>
+
+*Lark Group*
 
 ## License
-* AgentSmith-HIDS Driver: GPLv2
-* AgentSmith-HIDS Agent: Apache-2.0
+* Elkeid Driver: GPLv2
+* Elkeid RASP: Apache-2.0
+* Elkeid Agent: Apache-2.0
+* Elkeid Server: Apache-2.0
+* Elkeid Console: [Elkeid License](server/web_console/LICENSE)
+
+## 404StarLink 2.0 - Galaxy
+<img src="https://github.com/knownsec/404StarLink-Project/raw/master/logo.png" width="30%" style="float:left;"/>
+
+同时，Elkeid 也是 404Team [星链计划2.0](https://github.com/knownsec/404StarLink2.0-Galaxy)中的一环，如果对星链计划感兴趣的小伙伴可以点击下方链接了解。
+[https://github.com/knownsec/404StarLink2.0-Galaxy](https://github.com/knownsec/404StarLink2.0-Galaxy)

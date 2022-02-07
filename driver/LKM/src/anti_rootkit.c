@@ -1,4 +1,4 @@
-//  SPDX-License-Identifier: GPL-3.0
+//  SPDX-License-Identifier: GPL-2.0
 /*
  *  anti_rootkit.c
  *  
@@ -8,36 +8,35 @@
  *  Author: Nick Bulischeck <nbulisc@clemson.edu>
  */
 
+#include <linux/kthread.h>
 #include "../include/kprobe.h"
 #include "../include/anti_rootkit.h"
 #include "../include/util.h"
 
 #define CREATE_PRINT_EVENT
-#include "anti_rootkit_print.h"
+#include "../include/anti_rootkit_print.h"
 
 #define ANTI_ROOTKIT_CHECK 1
 
-#define DEFERRED_CHECK_TIMEOUT (15 * 60 * HZ)
+#define DEFERRED_CHECK_TIMEOUT (15 * 60)
 
 static int (*ckt) (unsigned long addr) = NULL;
 
+#ifdef CONFIG_X86
+#include <asm/unistd.h>
 static unsigned long *idt = NULL;
+#endif
+
 static unsigned long *sct = NULL;
 static struct kset *mod_kset = NULL;
-
-static void work_func(struct work_struct *dummy);
-
-static DECLARE_DELAYED_WORK(work, work_func);
+static struct mutex *mod_lock = NULL;
+struct module *(*mod_find_module)(const char *name);
+static struct module *(*get_module_from_addr)(unsigned long addr);
 
 #define BETWEEN_PTR(x, y, z) ( \
     ((uintptr_t)x >= (uintptr_t)y) && \
     ((uintptr_t)x < ((uintptr_t)y+(uintptr_t)z)) \
 )
-
-static struct module *get_module_from_addr(unsigned long addr)
-{
-    return __module_address(addr);
-}
 
 static const char *find_hidden_module(unsigned long addr)
 {
@@ -86,8 +85,18 @@ static const char *find_hidden_module(unsigned long addr)
     return mod_name;
 }
 
+static void module_list_lock(void)
+{
+    if (likely(mod_lock))
+		mutex_lock(mod_lock);
+}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0)
+static void module_list_unlock(void)
+{
+    if (likely(mod_lock))
+		mutex_unlock(mod_lock);
+
+}
 
 static void analyze_syscalls(void)
 {
@@ -104,14 +113,14 @@ static void analyze_syscalls(void)
 		addr = sct[i];
 	
 		if (!ckt(addr)) {
-			mutex_lock(&module_mutex);
+			module_list_lock();
 			mod = get_module_from_addr(addr);
 			if (mod) {
 				mod_name = mod->name;
 			} else {
 				const char* name = find_hidden_module(addr);
 				if (IS_ERR_OR_NULL(name)) {
-				    mutex_unlock(&module_mutex);
+				    module_list_unlock();
 				    continue;
 				}
 
@@ -119,14 +128,15 @@ static void analyze_syscalls(void)
 			}
 			
 			syscall_print(mod_name, i);
-			mutex_unlock(&module_mutex);
+			module_list_unlock();
 		}
 	}
 }
 
 static void analyze_interrupts(void)
 {
-    int i;
+#ifdef CONFIG_X86
+	int i;
 	unsigned long addr;
 	struct module *mod;
 
@@ -138,7 +148,7 @@ static void analyze_interrupts(void)
 
 		addr = idt[i];
 		if (!ckt(addr)) {
-			mutex_lock(&module_mutex);
+			module_list_lock();
 
 			mod = get_module_from_addr(addr);
 			if (mod) {
@@ -146,7 +156,7 @@ static void analyze_interrupts(void)
 			} else {
 				const char *name = find_hidden_module(addr);
 				if (IS_ERR_OR_NULL(name)) {
-				    mutex_unlock(&module_mutex);
+				    module_list_unlock();
 				    continue;
 				}
 
@@ -154,9 +164,10 @@ static void analyze_interrupts(void)
 			}
 
 			interrupts_print(mod_name, i);
-			mutex_unlock(&module_mutex);
+			module_list_unlock();
 		}
 	}
+#endif
 }
 
 static void analyze_modules(void)
@@ -175,7 +186,7 @@ static void analyze_modules(void)
 
 		kobj = container_of(cur, struct module_kobject, kobj);
 		if (kobj && kobj->mod && kobj->mod->name) {
-			if (!find_module(kobj->mod->name))
+			if (mod_find_module && !mod_find_module(kobj->mod->name))
 				mod_print(kobj->mod->name);
 		}
 	}
@@ -184,19 +195,19 @@ static void analyze_modules(void)
 
 static void analyze_fops(void)
 {
+    struct module *mod = NULL;
     unsigned long addr;
 	const char *mod_name;
 	struct file *fp;
-	struct module *mod;
 
 	fp = filp_open("/proc", O_RDONLY, S_IRUSR);
 	if (IS_ERR_OR_NULL(fp)) {
-		printk(KERN_INFO "[SMITH] open /proc error\n");
+		printk(KERN_INFO "[ELKEID] open /proc error\n");
 		return;
 	}
 
 	if (IS_ERR_OR_NULL(fp->f_op)) {
-		printk(KERN_INFO "[SMITH] /proc has no fops\n");
+		printk(KERN_INFO "[ELKEID] /proc has no fops\n");
 		filp_close(fp, NULL);
 		return;
 	}
@@ -207,65 +218,93 @@ static void analyze_fops(void)
 #endif
 
 	if (!ckt(addr)) {
-		mutex_lock(&module_mutex);
-		mod = get_module_from_addr(addr);
+		module_list_lock();
+		if (get_module_from_addr)
+		    mod = get_module_from_addr(addr);
 		mod_name = mod ? mod->name : find_hidden_module(addr);
 		if (!IS_ERR_OR_NULL(mod_name))
 			fops_print(mod_name);
-		mutex_unlock(&module_mutex);
+		module_list_unlock();
 	}
 	filp_close(fp, NULL);
 }
 
-#endif // LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0)
-
-
 static void anti_rootkit_check(void)
 {
-    analyze_fops();
+	analyze_fops();
 	analyze_syscalls();
 	analyze_modules();
 	analyze_interrupts();
 }
 
-static void work_func(struct work_struct *dummy)
+static struct task_struct *g_worker_thread;
+static int anti_rootkit_worker(void *argv)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0)
-    anti_rootkit_check();
-	schedule_delayed_work(&work, round_jiffies_relative(DEFERRED_CHECK_TIMEOUT));
-#endif
+    unsigned long timeout = msecs_to_jiffies(DEFERRED_CHECK_TIMEOUT * 1000);
+
+    do {
+        /* waiting 15 minutes, or being waken up */
+        if (!schedule_timeout_interruptible(timeout)) {
+            /* perform rootkit detection */
+            anti_rootkit_check();
+        }
+    } while (!kthread_should_stop());
+
+    do_exit(0);
+    return 0;
 }
 
-static void init_del_workqueue(void)
+static int __init anti_rootkit_start(void)
 {
-    schedule_delayed_work(&work, 0);
+    int rc = 0;
+
+    g_worker_thread = kthread_create(anti_rootkit_worker, 0, "elkeid - antirootkit");
+    if (IS_ERR(g_worker_thread)) {
+        rc = g_worker_thread ? PTR_ERR(g_worker_thread) : -ENOMEM;
+        printk("anti_rootkit_start: failed creating anti-rootkit worker: %d\n", rc);
+        return rc;
+    }
+
+    /* wake up anti-rootkit worker thread */
+    if (!wake_up_process(g_worker_thread)) {
+        kthread_stop(g_worker_thread);
+        g_worker_thread = NULL;
+    }
+    return rc;
 }
 
-static void exit_del_workqueue(void)
-{
-    cancel_delayed_work_sync(&work);
-}
 
 static int __init anti_rootkit_init(void)
 {
     struct kset **kset;
 
+#ifdef CONFIG_X86
     idt = (void *)smith_kallsyms_lookup_name("idt_table");
+#endif
     sct = (void *)smith_kallsyms_lookup_name("sys_call_table");
     ckt = (void *)smith_kallsyms_lookup_name("core_kernel_text");
+	mod_lock = (void *)smith_kallsyms_lookup_name("module_lock");
+	mod_find_module = (void *)smith_kallsyms_lookup_name("find_module");
+    get_module_from_addr = (void *)smith_kallsyms_lookup_name("__module_address");
     kset = (void *)smith_kallsyms_lookup_name("module_kset");
     if (kset)
         mod_kset = *kset;
-    init_del_workqueue();
-    printk("[SMITH] ANTI_ROOTKIT_CHECK: %d\n", ANTI_ROOTKIT_CHECK);
+
+    /* start rootkit-detection worker thread */
+    anti_rootkit_start();
+
+    printk("[ELKEID] ANTI_ROOTKIT_CHECK: %d\n", ANTI_ROOTKIT_CHECK);
     return 0;
 }
 
 static void anti_rootkit_exit(void)
 {
-    exit_del_workqueue();
+    /* kthread_stop will wait until worker thread exits */
+    if (!IS_ERR_OR_NULL(g_worker_thread)) {
+        kthread_stop(g_worker_thread);
+    }
 }
 
-#if (ANTI_ROOTKIT_CHECK == 1 && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
+#if ANTI_ROOTKIT_CHECK
 KPROBE_INITCALL(anti_rootkit_init, anti_rootkit_exit);
 #endif

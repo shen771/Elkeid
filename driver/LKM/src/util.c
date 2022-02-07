@@ -7,22 +7,26 @@
 #include <linux/version.h>
 #include <linux/kallsyms.h>
 
-#define PID_TREE_MATEDATA_LEN  32
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0) || LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33)
+
+#include <linux/kprobes.h>
 
 static unsigned long (*kallsyms_lookup_name_sym)(const char *name);
-static int dummy_kprobe_handler(struct kprobe *p, struct pt_regs *regs){
+
+static int _kallsyms_lookup_kprobe(struct kprobe *p, struct pt_regs *regs)
+{
         return 0;
 }
 
-unsigned long get_kallsyms_func(void){
+unsigned long get_kallsyms_func(void)
+{
         struct kprobe probe;
         int ret;
         unsigned long addr;
 
         memset(&probe, 0, sizeof(probe));
-        probe.pre_handler = dummy_kprobe_handler;
+        probe.pre_handler = _kallsyms_lookup_kprobe;
         probe.symbol_name = "kallsyms_lookup_name";
         ret = register_kprobe(&probe);
         if (ret)
@@ -32,14 +36,13 @@ unsigned long get_kallsyms_func(void){
         return addr;
 }
 
-
 unsigned long smith_kallsyms_lookup_name(const char *name)
 {
         /* singleton */
         if (!kallsyms_lookup_name_sym) {
                 kallsyms_lookup_name_sym = (void *)get_kallsyms_func();
                 if(!kallsyms_lookup_name_sym)
-                        reutrn 0;
+                        return 0;
         }
         return kallsyms_lookup_name_sym(name);
 }
@@ -52,115 +55,6 @@ unsigned long smith_kallsyms_lookup_name(const char *name)
 }
 
 #endif
-
-#ifdef CONFIG_X86
-#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 7, 0)
-u64 GET_PPIN(void)
-{
-	int err;
-	u64 res;
-	res = paravirt_read_msr_safe(0x4f, &err);
-	return res;
-}
-#else
-u64 GET_PPIN(void)
-{
-	return 0;
-}
-#endif
-#else
-
-u64 GET_PPIN(void)
-{
-    return 0;
-}
-
-#endif
-
-
-//get task exe file full path && only current can use it
-char *get_exe_file(struct task_struct *task, char *buffer, int size)
-{
-    char *exe_file_str = "-1";
-
-    if (!buffer || !task->mm)
-        return exe_file_str;
-
-    if (down_read_trylock(&task->mm->mmap_sem)) {
-        if (task->mm->exe_file) {
-            exe_file_str =
-                    d_path(&task->mm->exe_file->f_path, buffer,
-                           size);
-
-            if (IS_ERR(exe_file_str))
-                exe_file_str = "-1";
-        }
-        up_read(&task->mm->mmap_sem);
-    }
-
-    return exe_file_str;
-}
-
-//get pid tree
-char *get_pid_tree(int limit)
-{
-    int real_data_len = PID_TREE_MATEDATA_LEN;
-    int limit_index = 0;
-    char *tmp_data = NULL;
-    char pid[24];
-    struct task_struct *task;
-    struct task_struct *old_task;
-
-    task = current;
-    get_task_struct(task);
-
-    //task->pid is int
-    snprintf(pid, 24, "%d", task->pid);
-    tmp_data = kzalloc(1024, GFP_ATOMIC);
-
-    if (!tmp_data) {
-        put_task_struct(task);
-        return tmp_data;
-    }
-
-    strcat(tmp_data, pid);
-    strcat(tmp_data, ".");
-    strcat(tmp_data, current->comm);
-
-    while (task->pid != 1) {
-        limit_index = limit_index + 1;
-        if (limit_index >= limit) {
-            put_task_struct(task);
-            break;
-        }
-
-        old_task = task;
-        rcu_read_lock();
-        task = rcu_dereference(task->real_parent);
-        put_task_struct(old_task);
-        if (!task) {
-            rcu_read_unlock();
-            break;
-        }
-
-        get_task_struct(task);
-        rcu_read_unlock();
-
-        real_data_len = real_data_len + PID_TREE_MATEDATA_LEN;
-        if (real_data_len > 1024) {
-            put_task_struct(task);
-            break;
-        }
-
-        snprintf(pid, sizeof(size_t), "%d", task->pid);
-        strcat(tmp_data, "<");
-        strcat(tmp_data, pid);
-        strcat(tmp_data, ".");
-        strcat(tmp_data, task->comm);
-    }
-
-    return tmp_data;
-}
 
 int prepend(char **buffer, int *buflen, const char *str, int namelen)
 {
@@ -207,4 +101,18 @@ char *__dentry_path(struct dentry *dentry, char *buf, int buflen)
     return retval;
 Elong:
     return ERR_PTR(-ENAMETOOLONG);
+}
+
+u8 *smith_query_sb_uuid(struct super_block *sb)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
+    /* uuid_t s_uuid; */
+    return (u8 *)&sb->s_uuid;
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 39)
+    /* s_uuid not defined, using fixed zone of this sb */
+    return (u8 *)&sb->s_dev;
+#else
+    /* u8 s_uuid[16]; */
+    return (u8 *)&sb->s_uuid[0];
+#endif
 }

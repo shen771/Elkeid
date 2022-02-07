@@ -80,10 +80,9 @@ static void __exit kprobes_exit(void)
 module_init(kprobes_init);
 module_exit(kprobes_exit);
 
-MODULE_INFO(homepage, "https://github.com/smcdef/kprobe-template");
-MODULE_VERSION("1.5.0.0");
+MODULE_INFO(homepage, "driver");
+MODULE_VERSION("1.7.0.4");
 
-//MODULE_LICENSE("GPLv3");
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Will Chen <chenyue.will@bytedance.com>;Muchun Song <songmuchun@bytedance.com>;Jia Ma <jia.ma@bytedance.com>; Gaba <panxiting@bytedance.com>");
-MODULE_DESCRIPTION("Kprobe template for AgentSmith-HIDS");
+MODULE_AUTHOR("Will Chen <chenyue.will@bytedance.com>;Ping Shen <shenping.matt@bytedance.com>");
+MODULE_DESCRIPTION("Elkied Driver is the core component of Elkeid HIDS project");
