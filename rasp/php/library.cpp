@@ -42,6 +42,30 @@ zval *HTTPGlobals(
 #endif
 }
 
+void startProbe() {
+    if (fork() != 0)
+        return;
+
+    INIT_FILE_LOG(zero::INFO, "php-probe");
+
+    char name[16] = {};
+    snprintf(name, sizeof(name), "probe(%d)", getppid());
+
+    if (prctl(PR_SET_PDEATHSIG, SIGKILL) < 0) {
+        LOG_ERROR("set death signal failed");
+        exit(-1);
+    }
+
+    if (pthread_setname_np(pthread_self(), name) != 0) {
+        LOG_ERROR("set process name failed");
+        exit(-1);
+    }
+
+    gSmithProbe->start();
+
+    exit(0);
+}
+
 PHP_GINIT_FUNCTION (php_probe) {
 #ifdef ZTS
     new (php_probe_globals) _zend_php_probe_globals();
@@ -62,26 +86,22 @@ PHP_MINIT_FUNCTION (php_probe) {
     if (!gAPIConfig || !gAPITrace)
         return FAILURE;
 
-    if (fork() == 0) {
-        INIT_FILE_LOG(zero::INFO, "php-probe");
+    startProbe();
 
-        char name[16] = {};
-        snprintf(name, sizeof(name), "probe(%d)", getppid());
+    pthread_atfork(
+            []() {
+                static pid_t pid = getpid();
+                static bool initialized = false;
 
-        if (prctl(PR_SET_PDEATHSIG, SIGKILL) < 0) {
-            LOG_ERROR("set death signal failed");
-            exit(-1);
-        }
+                if (initialized || pid == getpid())
+                    return;
 
-        if (pthread_setname_np(pthread_self(), name) != 0) {
-            LOG_ERROR("set process name failed");
-            exit(-1);
-        }
-
-        gSmithProbe->start();
-
-        exit(0);
-    }
+                initialized = true;
+                startProbe();
+            },
+            nullptr,
+            nullptr
+    );
 
     for (const auto &api: PHP_API) {
         HashTable *hashTable = CG(function_table);
@@ -364,8 +384,16 @@ PHP_MINFO_FUNCTION (php_probe) {
     php_info_print_table_end();
 }
 
+zend_module_dep php_probe_module_dep[] = {
+        ZEND_MOD_REQUIRED("standard")
+        ZEND_MOD_CONFLICTS("xdebug")
+        ZEND_MOD_END
+};
+
 zend_module_entry php_probe_module_entry = {
-        STANDARD_MODULE_HEADER,
+        STANDARD_MODULE_HEADER_EX,
+        nullptr,
+        php_probe_module_dep,
         "php probe",
         nullptr,
         PHP_MINIT(php_probe),
